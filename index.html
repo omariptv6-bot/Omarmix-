@@ -1,0 +1,1311 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>استوديو التعليق - عزل خلفية الكاميرا، فلاتر الوجه والعلامة المائية المتقدمة</title>
+    
+    <!-- PWA Meta Tags -->
+    <meta name="theme-color" content="#0f172a">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <!-- MediaPipe Selfie Segmentation for AI Background Removal -->
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/camera_utils/camera_utils.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/selfie_segmentation.js" crossorigin="anonymous"></script>
+
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Amiri:wght@700&family=Cairo:wght@400;600;700;800&family=Tajawal:wght@700&family=Montserrat:wght@800&display=swap');
+        
+        body {
+            font-family: 'Cairo', sans-serif;
+            touch-action: manipulation;
+            user-select: none;
+            -webkit-user-select: none;
+        }
+        .cam-preview-container {
+            touch-action: none;
+            cursor: grab;
+        }
+        .cam-preview-container:active {
+            cursor: grabbing;
+        }
+        ::-webkit-scrollbar {
+            width: 6px;
+            height: 6px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #1f2937;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #4b5563;
+            border-radius: 3px;
+        }
+
+        /* Watermark Font Options */
+        .font-cairo { font-family: 'Cairo', sans-serif; }
+        .font-tajawal { font-family: 'Tajawal', sans-serif; }
+        .font-amiri { font-family: 'Amiri', serif; }
+        .font-montserrat { font-family: 'Montserrat', sans-serif; }
+        .font-impact { font-family: 'Impact', 'Arial Black', sans-serif; }
+
+        /* RGB Border Animation */
+        .rgb-border {
+            box-shadow: 0 0 15px rgba(168, 85, 247, 0.6);
+            animation: rgbGlow 4s linear infinite;
+        }
+        @keyframes rgbGlow {
+            0% { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.7); }
+            33% { border-color: #ec4899; box-shadow: 0 0 15px rgba(236, 72, 153, 0.7); }
+            66% { border-color: #3b82f6; box-shadow: 0 0 15px rgba(59, 130, 246, 0.7); }
+            100% { border-color: #a855f7; box-shadow: 0 0 15px rgba(168, 85, 247, 0.7); }
+        }
+    </style>
+</head>
+<body class="bg-gray-950 text-gray-100 min-h-screen flex flex-col justify-between selection:bg-purple-600 selection:text-white pb-6">
+
+    <!-- Top Navigation -->
+    <header class="bg-gray-900 border-b border-gray-800 px-4 py-3 sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto flex justify-between items-center">
+            <div class="flex items-center gap-3">
+                <div class="bg-gradient-to-tr from-purple-600 to-pink-500 p-2.5 rounded-xl shadow-lg shadow-purple-900/30">
+                    <i class="fa-solid fa-wand-magic-sparkles text-white text-xl"></i>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg leading-none bg-gradient-to-r from-purple-400 to-pink-400 bg-clip-text text-transparent">استوديو رد الفعل الاحترافي</h1>
+                    <p class="text-xs text-gray-400 mt-1">إصدار متطور: عزل الكاميرا، تسجيل عالي الجودة، والمؤثرات الصوتية</p>
+                </div>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button id="toggleHelpBtn" class="bg-gray-800 hover:bg-gray-700 text-gray-300 px-3 py-1.5 rounded-lg text-sm flex items-center gap-2 transition">
+                    <i class="fa-solid fa-circle-info text-purple-400"></i>
+                    <span>تعليمات</span>
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Content Area -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Video Stage & Soundboard -->
+        <div class="lg:col-span-8 flex flex-col gap-4">
+            
+            <div class="relative bg-black rounded-2xl overflow-hidden aspect-video border border-gray-800 shadow-2xl flex items-center justify-center select-none" id="viewport">
+                
+                <!-- Main Background Video -->
+                <video id="mainVideo" class="w-full h-full object-contain" crossorigin="anonymous" playsinline></video>
+
+                <!-- Watermark Overlay Preview (Text & Logo) -->
+                <div id="watermarkPreview" class="absolute z-30 flex items-center gap-2 px-3 py-1.5 rounded-lg bg-black/40 backdrop-blur-sm border border-white/10 text-white shadow-xl transition-all cursor-grab active:cursor-grabbing select-none" style="top: 16px; left: 16px;">
+                    <i class="fa-solid fa-grip-vertical text-gray-400/60 text-xs mr-0.5"></i>
+                    <img id="wmLogoImgDisplay" class="h-6 w-auto object-contain hidden" alt="Logo">
+                    <span id="watermarkTextDisplay">@channel_name</span>
+                </div>
+                
+                <!-- Video File Placeholder UI -->
+                <div id="noVideoPlaceholder" class="absolute inset-0 flex flex-col items-center justify-center p-6 text-center bg-gray-900/90 z-10 backdrop-blur-sm">
+                    <div class="w-20 h-20 bg-purple-900/30 border border-purple-500/30 rounded-full flex items-center justify-center text-purple-400 mb-4 animate-pulse">
+                        <i class="fa-solid fa-film text-3xl"></i>
+                    </div>
+                    <h3 class="text-xl font-bold mb-2">اختر فيديو للبدء بالتعليق عليه</h3>
+                    <p class="text-gray-400 text-sm max-w-md mb-6">قم برفع فيديو من جهازك أو تسجيل شاشة حية مع إضافة شعار قناتك، إلغاء خلفية الكاميرا وتطبيق فلاتر الوجه.</p>
+                    <div class="flex flex-wrap gap-3 justify-center">
+                        <label class="bg-purple-600 hover:bg-purple-500 text-white font-semibold px-5 py-2.5 rounded-xl cursor-pointer transition shadow-lg shadow-purple-600/30 flex items-center gap-2">
+                            <i class="fa-solid fa-upload"></i>
+                            <span>رفع فيديو من الجهاز</span>
+                            <input type="file" id="videoFileInput" accept="video/mp4,video/webm,video/ogg,video/quicktime,video/*" class="hidden">
+                        </label>
+                        <button id="captureScreenBtn" class="bg-indigo-600 hover:bg-indigo-500 text-white font-medium px-5 py-2.5 rounded-xl transition flex items-center gap-2 shadow-lg shadow-indigo-600/30">
+                            <i class="fa-solid fa-desktop"></i>
+                            <span>مشاركة الشاشة / علامة تبويب</span>
+                        </button>
+                        <button id="loadSampleBtn" class="bg-gray-800 hover:bg-gray-700 border border-gray-700 text-gray-200 font-medium px-5 py-2.5 rounded-xl transition flex items-center gap-2">
+                            <i class="fa-solid fa-play text-pink-400"></i>
+                            <span>استخدام فيديو توضيحي</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Floating Draggable Front Camera Overlay Canvas -->
+                <div id="camOverlay" class="cam-preview-container absolute top-4 right-4 z-20 border-4 border-purple-500 shadow-2xl overflow-hidden rounded-full flex items-center justify-center bg-black/30 rgb-border" style="width: 160px; height: 160px; border-color: #a855f7;">
+                    <video id="camVideo" class="hidden" autoplay muted playsinline></video>
+                    <canvas id="camCanvas" class="w-full h-full object-cover transform -scale-x-100 pointer-events-none"></canvas>
+                    
+                    <div id="camOffState" class="absolute inset-0 bg-gray-900/95 flex flex-col items-center justify-center text-gray-300 p-3 text-center pointer-events-none">
+                        <i id="camStatusIcon" class="fa-solid fa-spinner animate-spin text-purple-400 text-xl mb-1"></i>
+                        <span id="camStatusText" class="text-[10px] leading-tight">جاري تشغيل الكاميرا...</span>
+                    </div>
+                </div>
+
+                <!-- Hidden Processing Canvas for Export -->
+                <canvas id="exportCanvas" class="hidden"></canvas>
+            </div>
+
+            <!-- Player Bar -->
+            <div class="bg-gray-900 border border-gray-800 p-4 rounded-2xl flex flex-col gap-3">
+                <div class="flex items-center gap-4">
+                    <button id="playPauseBtn" class="w-10 h-10 rounded-full bg-purple-600 hover:bg-purple-500 text-white flex items-center justify-center transition shadow-md shrink-0">
+                        <i class="fa-solid fa-play" id="playPauseIcon"></i>
+                    </button>
+                    <button id="rewindBtn" title="تراجع 5 ثوانٍ" class="w-9 h-9 rounded-xl bg-gray-800 hover:bg-gray-700 text-gray-300 flex items-center justify-center transition shrink-0">
+                        <i class="fa-solid fa-rotate-left text-xs"></i>
+                    </button>
+                    <span id="currentTime" class="text-xs font-mono text-gray-400 w-12">00:00</span>
+                    <input type="range" id="seekBar" value="0" min="0" max="100" class="w-full accent-purple-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+                    <span id="durationTime" class="text-xs font-mono text-gray-400 w-12">00:00</span>
+                </div>
+            </div>
+
+            <!-- Soundboard Feature -->
+            <div class="bg-gray-900 border border-gray-800 p-4 rounded-2xl flex flex-col gap-3">
+                <div class="flex items-center justify-between border-b border-gray-800 pb-2">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-volume-high text-pink-400"></i>
+                        <h3 class="font-bold text-sm text-gray-200">لوحة المؤثرات الصوتية الحية (Soundboard)</h3>
+                    </div>
+                    <span class="text-[10px] text-gray-400">اضغط لإضافة صوت مباشر أثناء التسجيل</span>
+                </div>
+                <div class="grid grid-cols-4 gap-2">
+                    <button data-sound="applause" class="sound-btn bg-gray-950 hover:bg-purple-900/30 border border-gray-800 hover:border-purple-500 text-gray-200 py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition">
+                        <span>👏 تصفيق</span>
+                    </button>
+                    <button data-sound="laugh" class="sound-btn bg-gray-950 hover:bg-purple-900/30 border border-gray-800 hover:border-purple-500 text-gray-200 py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition">
+                        <span>😂 ضحك</span>
+                    </button>
+                    <button data-sound="gasp" class="sound-btn bg-gray-950 hover:bg-purple-900/30 border border-gray-800 hover:border-purple-500 text-gray-200 py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition">
+                        <span>😱 صدمة</span>
+                    </button>
+                    <button data-sound="drum" class="sound-btn bg-gray-950 hover:bg-purple-900/30 border border-gray-800 hover:border-purple-500 text-gray-200 py-2 px-3 rounded-xl text-xs flex items-center justify-center gap-2 transition">
+                        <span>🥁 طبلة</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Record Actions & Status -->
+            <div class="flex flex-wrap items-center justify-between gap-4 bg-gray-900 border border-gray-800 p-4 rounded-2xl">
+                <div class="flex items-center gap-3">
+                    <button id="startRecordBtn" class="bg-red-600 hover:bg-red-500 text-white font-bold px-6 py-3 rounded-xl transition shadow-lg shadow-red-900/30 flex items-center gap-2 text-sm">
+                        <span class="w-3 h-3 rounded-full bg-white animate-ping"></span>
+                        <span>بدء تسجيل رد الفعل</span>
+                    </button>
+                    <button id="stopRecordBtn" disabled class="bg-gray-800 text-gray-500 font-bold px-6 py-3 rounded-xl cursor-not-allowed flex items-center gap-2 text-sm transition">
+                        <i class="fa-solid fa-square"></i>
+                        <span>إيقاف وحفظ الفيديو</span>
+                    </button>
+                </div>
+                
+                <div class="flex items-center gap-2 text-xs text-gray-400">
+                    <i class="fa-solid fa-circle text-red-500 text-[10px]" id="recStatusDot" style="opacity: 0.3;"></i>
+                    <span id="recStatusText">جاهز للتسجيل</span>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Settings & Customization -->
+        <div class="lg:col-span-4 flex flex-col gap-4">
+
+            <!-- Watermark & Logo Advanced Customization Panel -->
+            <div class="bg-gradient-to-br from-gray-900 to-purple-950/40 border border-purple-500/30 p-5 rounded-2xl flex flex-col gap-4 shadow-lg">
+                <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-copyright text-purple-400 text-lg"></i>
+                        <h3 class="font-bold text-white text-sm">العلامة المائية والشعار (Logo)</h3>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="watermarkToggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                </div>
+
+                <!-- Logo Image Upload Field -->
+                <div class="space-y-1.5">
+                    <label class="text-xs text-gray-300 font-medium block flex items-center justify-between">
+                        <span><i class="fa-solid fa-image text-purple-400 ml-1"></i> رفع لوجو / شعار خاص:</span>
+                        <button id="removeLogoBtn" class="text-[10px] text-red-400 hover:text-red-300 hidden">إزالة اللوجو</button>
+                    </label>
+                    <label class="flex items-center justify-center gap-2 w-full bg-gray-950 border border-dashed border-gray-700 hover:border-purple-500 text-gray-300 px-3 py-2 rounded-xl text-xs cursor-pointer transition">
+                        <i class="fa-solid fa-cloud-arrow-up text-purple-400"></i>
+                        <span id="logoFileName">اختيار صورة اللوجو (PNG شفاف)</span>
+                        <input type="file" id="logoFileInput" accept="image/*" class="hidden">
+                    </label>
+                </div>
+
+                <!-- Watermark Text Input -->
+                <div class="space-y-1">
+                    <label class="text-xs text-gray-300 font-medium block">نص العلامة المائية:</label>
+                    <input type="text" id="watermarkTextInput" value="@my_channel" placeholder="مثال: @اسم_قناتك" class="w-full bg-gray-950 border border-gray-800 focus:border-purple-500 rounded-xl px-3 py-2 text-xs text-white outline-none transition">
+                </div>
+
+                <!-- Font Family & Color Selection -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="space-y-1">
+                        <label class="text-xs text-gray-300 font-medium block">أسلوب الخط:</label>
+                        <select id="wmFontSelect" class="w-full bg-gray-950 border border-gray-800 focus:border-purple-500 rounded-xl px-2.5 py-2 text-xs text-white outline-none transition">
+                            <option value="Cairo" class="font-cairo" selected>القاهرة (Cairo)</option>
+                            <option value="Tajawal" class="font-tajawal">تجوال (Tajawal)</option>
+                            <option value="Amiri" class="font-amiri">أميري (Amiri)</option>
+                            <option value="Montserrat" class="font-montserrat">Montserrat (English)</option>
+                            <option value="Impact" class="font-impact">Impact (Bold)</option>
+                        </select>
+                    </div>
+
+                    <div class="space-y-1">
+                        <label class="text-xs text-gray-300 font-medium block">لون النص:</label>
+                        <div class="flex items-center gap-2 bg-gray-950 border border-gray-800 p-1.5 rounded-xl">
+                            <input type="color" id="wmTextColorPicker" value="#ffffff" class="w-7 h-7 rounded-lg cursor-pointer bg-transparent border-0">
+                            <span id="wmHexLabel" class="text-[10px] font-mono text-gray-400">#FFFFFF</span>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Watermark Position Selector -->
+                <div class="space-y-1">
+                    <label class="text-xs text-gray-300 font-medium block flex justify-between items-center">
+                        <span>الموقع (أو اسحبها بحرية):</span>
+                        <span class="text-[10px] text-purple-400"><i class="fa-solid fa-hand-pointer ml-1"></i>يمكنك سحب العلامة بالموز/اللمس</span>
+                    </label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button data-pos="top-left" class="wm-pos-btn active bg-purple-600/20 border-2 border-purple-500 text-purple-300 py-1.5 rounded-xl text-xs font-semibold transition">أعلى اليسار</button>
+                        <button data-pos="top-right" class="wm-pos-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-1.5 rounded-xl text-xs font-semibold transition">أعلى اليمين</button>
+                        <button data-pos="bottom-left" class="wm-pos-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-1.5 rounded-xl text-xs font-semibold transition">أسفل اليسار</button>
+                        <button data-pos="bottom-right" class="wm-pos-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-1.5 rounded-xl text-xs font-semibold transition">أسفل اليمين</button>
+                    </div>
+                </div>
+
+                <!-- Opacity & Size Sliders -->
+                <div class="grid grid-cols-2 gap-3">
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-gray-300">
+                            <span>الشفافية</span>
+                            <span id="wmOpacityVal" class="text-purple-400 font-mono">80%</span>
+                        </div>
+                        <input type="range" id="wmOpacitySlider" min="20" max="100" value="80" class="w-full accent-purple-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                    <div class="space-y-1">
+                        <div class="flex justify-between text-xs text-gray-300">
+                            <span>الحجم</span>
+                            <span id="wmSizeVal" class="text-purple-400 font-mono">20px</span>
+                        </div>
+                        <input type="range" id="wmSizeSlider" min="14" max="36" value="20" class="w-full accent-purple-500 h-1.5 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+                    </div>
+                </div>
+            </div>
+
+            <!-- AI Background Removal Toggle Card -->
+            <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col gap-4 shadow-lg">
+                <div class="flex items-center justify-between border-b border-gray-800 pb-3">
+                    <div class="flex items-center gap-2">
+                        <i class="fa-solid fa-user-astronaut text-purple-400 text-lg"></i>
+                        <div>
+                            <h3 class="font-bold text-white text-sm">إزالة خلفية الكاميرا (AI)</h3>
+                            <p class="text-[10px] text-gray-400">دمج صورتك مباشرة فوق الفيديو بدون خلفية</p>
+                        </div>
+                    </div>
+                    <label class="relative inline-flex items-center cursor-pointer">
+                        <input type="checkbox" id="removeBgToggle" checked class="sr-only peer">
+                        <div class="w-11 h-6 bg-gray-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full rtl:peer-checked:after:-translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:start-[2px] after:bg-white after:border-gray-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-purple-600"></div>
+                    </label>
+                </div>
+
+                <div id="fullOverlayModeContainer" class="space-y-2">
+                    <label class="text-xs text-gray-300 font-medium block"><i class="fa-solid fa-clone text-purple-400 ml-1"></i> وضعية الشاشة:</label>
+                    <div class="grid grid-cols-2 gap-2">
+                        <button id="modeFloatingBtn" class="bg-purple-600/30 border-2 border-purple-500 text-purple-200 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-circle-dot"></i>
+                            <span>نافذة عائمة</span>
+                        </button>
+                        <button id="modeFullOverlayBtn" class="bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                            <i class="fa-solid fa-expand"></i>
+                            <span>ملء الفيديو بالكامل</span>
+                        </button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Face Filters Selection Panel -->
+            <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col gap-3">
+                <h3 class="font-bold text-gray-200 text-sm flex items-center gap-2 border-b border-gray-800 pb-2">
+                    <i class="fa-solid fa-wand-magic-sparkles text-purple-400"></i>
+                    <span>فلاتر ومؤثرات وجه الكاميرا الحية</span>
+                </h3>
+                <div class="grid grid-cols-3 gap-2">
+                    <button data-filter="none" class="filter-btn active bg-purple-600/20 border-2 border-purple-500 text-purple-300 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-camera text-base"></i>
+                        <span>طبيعي</span>
+                    </button>
+                    <button data-filter="grayscale(100%)" class="filter-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-circle-half-stroke text-base"></i>
+                        <span>أبيض وأسود</span>
+                    </button>
+                    <button data-filter="sepia(80%)" class="filter-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-film text-base"></i>
+                        <span>كلاسيكي</span>
+                    </button>
+                    <button data-filter="contrast(150%) brightness(110%)" class="filter-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-sun text-base"></i>
+                        <span>عالي التباين</span>
+                    </button>
+                    <button data-filter="sepia(40%) saturate(160%) brightness(105%)" class="filter-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-fire text-base"></i>
+                        <span>توهج دافئ</span>
+                    </button>
+                    <button data-filter="hue-rotate(180deg) saturate(180%)" class="filter-btn bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex flex-col items-center gap-1 transition">
+                        <i class="fa-solid fa-hat-wizard text-base"></i>
+                        <span>فانتزي FX</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Aspect Ratio Selector -->
+            <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col gap-3">
+                <h3 class="font-bold text-gray-200 text-sm flex items-center gap-2">
+                    <i class="fa-solid fa-mobile-screen-button text-purple-400"></i>
+                    <span>أبعاد الفيديو (ريلز / عادي)</span>
+                </h3>
+                <div class="grid grid-cols-2 gap-2">
+                    <button id="ratio169Btn" class="bg-purple-600/20 border-2 border-purple-500 text-purple-300 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-desktop"></i>
+                        <span>أفقي (16:9)</span>
+                    </button>
+                    <button id="ratio916Btn" class="bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition">
+                        <i class="fa-solid fa-mobile-screen"></i>
+                        <span>ريلز / شورتس (9:16)</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- Audio Control Mix -->
+            <div class="bg-gray-900 border border-gray-800 p-5 rounded-2xl flex flex-col gap-4">
+                <h3 class="font-bold text-gray-200 text-sm flex items-center gap-2 border-b border-gray-800 pb-2">
+                    <i class="fa-solid fa-sliders text-purple-400"></i>
+                    <span>التحكم في الصوت والموازنة</span>
+                </h3>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-gray-300"><i class="fa-solid fa-microphone text-purple-400 ml-1"></i> الميكروفون</span>
+                        <span id="micVolVal" class="text-purple-400 font-mono">100%</span>
+                    </div>
+                    <input type="range" id="micVolSlider" min="0" max="150" value="100" class="w-full accent-purple-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+
+                <div class="space-y-1">
+                    <div class="flex justify-between text-xs">
+                        <span class="text-gray-300"><i class="fa-solid fa-volume-high text-pink-400 ml-1"></i> صوت الفيديو</span>
+                        <span id="videoVolVal" class="text-pink-400 font-mono">80%</span>
+                    </div>
+                    <input type="range" id="videoVolSlider" min="0" max="100" value="80" class="w-full accent-pink-500 h-2 bg-gray-800 rounded-lg appearance-none cursor-pointer">
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Help Modal -->
+    <div id="helpModal" class="fixed inset-0 bg-black/80 backdrop-blur-sm z-50 flex items-center justify-center p-4 hidden">
+        <div class="bg-gray-900 border border-gray-800 max-w-md w-full rounded-2xl p-6 relative shadow-2xl">
+            <button id="closeHelpBtn" class="absolute top-4 left-4 text-gray-400 hover:text-white text-xl">
+                <i class="fa-solid fa-xmark"></i>
+            </button>
+            <div class="flex items-center gap-3 mb-4">
+                <div class="bg-purple-600/20 p-3 rounded-xl border border-purple-500/30 text-purple-400">
+                    <i class="fa-solid fa-wand-magic-sparkles text-xl"></i>
+                </div>
+                <h3 class="text-lg font-bold text-white">دليل الميزات المتقدمة</h3>
+            </div>
+            <ul class="space-y-3 text-sm text-gray-300 pr-2 list-disc list-inside">
+                <li><strong class="text-purple-400">لوحة Soundboard:</strong> اضغط على أي زر مؤثر صوتي أثناء التسجيل لدمجه حياً في المقطع.</li>
+                <li><strong class="text-purple-400">زر التراجع السريع:</strong> يمكنك الضغط على زر التراجع للرجوع 5 ثوانٍ للوراء فورياً لمتابعة التعليق.</li>
+                <li><strong class="text-purple-400">مشاركة الشاشة:</strong> تعليق حقيقي ومباشر على بث أو مقاطع يوتيوب متصفحك.</li>
+            </ul>
+            <button id="gotItHelpBtn" class="w-full mt-6 bg-purple-600 hover:bg-purple-500 text-white font-bold py-2.5 rounded-xl transition">
+                حسنًا، ابدأ الآن
+            </button>
+        </div>
+    </div>
+
+    <!-- Notification Toast -->
+    <div id="toast" class="fixed bottom-6 left-1/2 -translate-x-1/2 bg-gray-800 border border-purple-500 text-white px-5 py-3 rounded-xl shadow-2xl z-50 transform translate-y-20 opacity-0 transition-all duration-300 flex items-center gap-3 pointer-events-none">
+        <i id="toastIcon" class="fa-solid fa-circle-check text-purple-400"></i>
+        <span id="toastMsg" class="text-sm font-medium"></span>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            // UI Elements
+            const mainVideo = document.getElementById('mainVideo');
+            const camVideo = document.getElementById('camVideo');
+            const camCanvas = document.getElementById('camCanvas');
+            const camCtx = camCanvas.getContext('2d');
+            const exportCanvas = document.getElementById('exportCanvas');
+            const exportCtx = exportCanvas.getContext('2d');
+            
+            const viewport = document.getElementById('viewport');
+            const camOverlay = document.getElementById('camOverlay');
+            const watermarkPreview = document.getElementById('watermarkPreview');
+            const noVideoPlaceholder = document.getElementById('noVideoPlaceholder');
+            const camOffState = document.getElementById('camOffState');
+            const camStatusText = document.getElementById('camStatusText');
+            const camStatusIcon = document.getElementById('camStatusIcon');
+
+            // Inputs & Controls
+            const videoFileInput = document.getElementById('videoFileInput');
+            const captureScreenBtn = document.getElementById('captureScreenBtn');
+            const loadSampleBtn = document.getElementById('loadSampleBtn');
+            const playPauseBtn = document.getElementById('playPauseBtn');
+            const playPauseIcon = document.getElementById('playPauseIcon');
+            const rewindBtn = document.getElementById('rewindBtn');
+            const seekBar = document.getElementById('seekBar');
+            const currentTimeEl = document.getElementById('currentTime');
+            const durationTimeEl = document.getElementById('durationTime');
+            
+            const startRecordBtn = document.getElementById('startRecordBtn');
+            const stopRecordBtn = document.getElementById('stopRecordBtn');
+            const recStatusDot = document.getElementById('recStatusDot');
+            const recStatusText = document.getElementById('recStatusText');
+
+            // Watermark Elements
+            const watermarkToggle = document.getElementById('watermarkToggle');
+            const watermarkTextInput = document.getElementById('watermarkTextInput');
+            const watermarkTextDisplay = document.getElementById('watermarkTextDisplay');
+            const logoFileInput = document.getElementById('logoFileInput');
+            const logoFileName = document.getElementById('logoFileName');
+            const wmLogoImgDisplay = document.getElementById('wmLogoImgDisplay');
+            const removeLogoBtn = document.getElementById('removeLogoBtn');
+            const wmFontSelect = document.getElementById('wmFontSelect');
+            const wmTextColorPicker = document.getElementById('wmTextColorPicker');
+            const wmHexLabel = document.getElementById('wmHexLabel');
+            const wmOpacitySlider = document.getElementById('wmOpacitySlider');
+            const wmOpacityVal = document.getElementById('wmOpacityVal');
+            const wmSizeSlider = document.getElementById('wmSizeSlider');
+            const wmSizeVal = document.getElementById('wmSizeVal');
+            const wmPosBtns = document.querySelectorAll('.wm-pos-btn');
+
+            // Camera Settings & AI Toggle
+            const removeBgToggle = document.getElementById('removeBgToggle');
+            const modeFloatingBtn = document.getElementById('modeFloatingBtn');
+            const modeFullOverlayBtn = document.getElementById('modeFullOverlayBtn');
+            const filterBtns = document.querySelectorAll('.filter-btn');
+            const ratio169Btn = document.getElementById('ratio169Btn');
+            const ratio916Btn = document.getElementById('ratio916Btn');
+
+            // Volume Mixers
+            const micVolSlider = document.getElementById('micVolSlider');
+            const micVolVal = document.getElementById('micVolVal');
+            const videoVolSlider = document.getElementById('videoVolSlider');
+            const videoVolVal = document.getElementById('videoVolVal');
+
+            // Help Modal
+            const toggleHelpBtn = document.getElementById('toggleHelpBtn');
+            const helpModal = document.getElementById('helpModal');
+            const closeHelpBtn = document.getElementById('closeHelpBtn');
+            const gotItHelpBtn = document.getElementById('gotItHelpBtn');
+
+            // Soundboard Buttons
+            const soundBtns = document.querySelectorAll('.sound-btn');
+
+            // Global State Variables
+            let micStream = null;
+            let cameraStream = null;
+            let mediaRecorder = null;
+            let recordedChunks = [];
+            let isRecording = false;
+            let activeFilter = 'none';
+            let isRemoveBgEnabled = true;
+            let isFullOverlayMode = false;
+            let isAspectRatio169 = true;
+            let logoImageObj = null;
+            let currentBlobUrl = null;
+
+            // Audio Context for Mix and Soundboard
+            let audioCtx = null;
+            let micGainNode = null;
+            let videoGainNode = null;
+            let audioDestination = null;
+
+            // MediaPipe Selfie Segmentation Object
+            let selfieSegmentation = null;
+            let mpCamera = null;
+
+            // Handle Video Player Errors
+            mainVideo.addEventListener('error', (e) => {
+                console.error('Video Error:', mainVideo.error);
+                showToast("تعذر تشغيل ملف الفيديو. قد تكون الصيغة غير مدعومة.", true);
+                noVideoPlaceholder.classList.remove('hidden');
+                playPauseIcon.className = "fa-solid fa-play";
+            });
+
+            // Show Toast Function
+            function showToast(msg, isError = false) {
+                const toast = document.getElementById('toast');
+                const toastMsg = document.getElementById('toastMsg');
+                const toastIcon = document.getElementById('toastIcon');
+                
+                toastMsg.innerText = msg;
+                if(isError) {
+                    toast.classList.remove('border-purple-500');
+                    toast.classList.add('border-red-500');
+                    toastIcon.className = "fa-solid fa-circle-exclamation text-red-400";
+                } else {
+                    toast.classList.remove('border-red-500');
+                    toast.classList.add('border-purple-500');
+                    toastIcon.className = "fa-solid fa-circle-check text-purple-400";
+                }
+
+                toast.classList.remove('translate-y-20', 'opacity-0');
+                setTimeout(() => {
+                    toast.classList.add('translate-y-20', 'opacity-0');
+                }, 3500);
+            }
+
+            // Web Audio API Soundboard Synth Effects
+            function playSoundFx(type) {
+                try {
+                    if (!audioCtx) {
+                        audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                    }
+                    if (audioCtx.state === 'suspended') {
+                        audioCtx.resume();
+                    }
+
+                    const osc = audioCtx.createOscillator();
+                    const gain = audioCtx.createGain();
+                    osc.connect(gain);
+                    
+                    if (audioDestination) {
+                        gain.connect(audioDestination);
+                    }
+                    gain.connect(audioCtx.destination);
+
+                    const now = audioCtx.currentTime;
+
+                    if (type === 'applause') {
+                        osc.type = 'sawtooth';
+                        osc.frequency.setValueAtTime(400, now);
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.8);
+                        osc.start(now);
+                        osc.stop(now + 0.8);
+                    } else if (type === 'laugh') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(300, now);
+                        osc.frequency.linearRampToValueAtTime(500, now + 0.1);
+                        osc.frequency.linearRampToValueAtTime(300, now + 0.2);
+                        gain.gain.setValueAtTime(0.25, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.4);
+                        osc.start(now);
+                        osc.stop(now + 0.4);
+                    } else if (type === 'gasp') {
+                        osc.type = 'triangle';
+                        osc.frequency.setValueAtTime(200, now);
+                        osc.frequency.exponentialRampToValueAtTime(600, now + 0.3);
+                        gain.gain.setValueAtTime(0.2, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.5);
+                        osc.start(now);
+                        osc.stop(now + 0.5);
+                    } else if (type === 'drum') {
+                        osc.type = 'sine';
+                        osc.frequency.setValueAtTime(130, now);
+                        osc.frequency.exponentialRampToValueAtTime(30, now + 0.2);
+                        gain.gain.setValueAtTime(0.4, now);
+                        gain.gain.exponentialRampToValueAtTime(0.01, now + 0.2);
+                        osc.start(now);
+                        osc.stop(now + 0.2);
+                    }
+                } catch(e) {
+                    console.warn('Audio context error:', e);
+                }
+            }
+
+            soundBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    playSoundFx(btn.dataset.sound);
+                });
+            });
+
+            // Initialize Camera & Microphone Stream
+            async function initCameraAndMic() {
+                try {
+                    camStatusText.innerText = "جاري طلب أذونات الميكروفون والكاميرا...";
+                    
+                    // Request Mic Stream
+                    try {
+                        micStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                    } catch(err) {
+                        console.warn("الميكروفون غير متوفر:", err);
+                        showToast("تعذر الحصول على إذن الميكروفون", true);
+                    }
+
+                    // Request Camera Stream
+                    cameraStream = await navigator.mediaDevices.getUserMedia({ 
+                        video: { width: { ideal: 640 }, height: { ideal: 480 }, facingMode: "user" } 
+                    });
+
+                    camVideo.srcObject = cameraStream;
+                    await camVideo.play();
+
+                    // Hide loading indicator
+                    camOffState.classList.add('hidden');
+                    showToast("تم تشغيل الكاميرا والميكروفون بنجاح!");
+
+                    // Setup MediaPipe AI Background Removal
+                    setupMediaPipe();
+
+                } catch (err) {
+                    console.error("Camera access error:", err);
+                    camStatusIcon.className = "fa-solid fa-triangle-exclamation text-red-400 text-xl mb-1";
+                    camStatusText.innerText = "فشل تشغيل الكاميرا. يرجى تفعيل الإذن.";
+                    showToast("تأكد من السماح بإذن الوصول للكاميرا والميكروفون", true);
+                }
+            }
+
+            // Setup MediaPipe Selfie Segmentation
+            function setupMediaPipe() {
+                try {
+                    selfieSegmentation = new SelfieSegmentation({
+                        locateFile: (file) => `https://cdn.jsdelivr.net/npm/@mediapipe/selfie_segmentation/${file}`
+                    });
+
+                    selfieSegmentation.setOptions({
+                        modelSelection: 1, // 1 for landscape/quality model
+                    });
+
+                    selfieSegmentation.onResults(onSelfieSegmentationResults);
+
+                    // Process camera frames
+                    async function processCamFrame() {
+                        if (camVideo.readyState >= 2 && isRemoveBgEnabled) {
+                            await selfieSegmentation.send({ image: camVideo });
+                        } else if (camVideo.readyState >= 2 && !isRemoveBgEnabled) {
+                            // Fallback raw video frame without background removal
+                            camCanvas.width = camVideo.videoWidth || 320;
+                            camCanvas.height = camVideo.videoHeight || 240;
+                            camCtx.filter = activeFilter;
+                            camCtx.drawImage(camVideo, 0, 0, camCanvas.width, camCanvas.height);
+                        }
+                        requestAnimationFrame(processCamFrame);
+                    }
+
+                    processCamFrame();
+
+                } catch (e) {
+                    console.warn("MediaPipe fallback engaged:", e);
+                }
+            }
+
+            // Process Selfie Segmentation Output AI Frame
+            function onSelfieSegmentationResults(results) {
+                camCanvas.width = results.image.width;
+                camCanvas.height = results.image.height;
+
+                camCtx.save();
+                camCtx.clearRect(0, 0, camCanvas.width, camCanvas.height);
+                camCtx.filter = activeFilter;
+
+                if (isRemoveBgEnabled) {
+                    // Draw Segmentation Mask
+                    camCtx.drawImage(results.segmentationMask, 0, 0, camCanvas.width, camCanvas.height);
+                    camCtx.globalCompositeOperation = 'source-in';
+                    camCtx.drawImage(results.image, 0, 0, camCanvas.width, camCanvas.height);
+                } else {
+                    camCtx.drawImage(results.image, 0, 0, camCanvas.width, camCanvas.height);
+                }
+
+                camCtx.restore();
+            }
+
+            // Initialize camera on startup
+            initCameraAndMic();
+
+            // Video Source File Loading Handler
+            videoFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    // Cleanup previous Blob URL to prevent memory leaks
+                    if (currentBlobUrl) {
+                        URL.revokeObjectURL(currentBlobUrl);
+                    }
+                    currentBlobUrl = URL.createObjectURL(file);
+                    loadMainVideo(currentBlobUrl, file.name);
+                }
+                // Reset value so re-selecting the same file triggers 'change' event
+                videoFileInput.value = '';
+            });
+
+            // Capture Screen/Tab Action
+            captureScreenBtn.addEventListener('click', async () => {
+                try {
+                    const screenStream = await navigator.mediaDevices.getDisplayMedia({
+                        video: true,
+                        audio: true
+                    });
+
+                    // Clear previous source URL if exists
+                    if (currentBlobUrl) {
+                        URL.revokeObjectURL(currentBlobUrl);
+                        currentBlobUrl = null;
+                    }
+                    mainVideo.removeAttribute('src');
+                    mainVideo.srcObject = screenStream;
+
+                    await mainVideo.play();
+                    noVideoPlaceholder.classList.add('hidden');
+                    playPauseIcon.className = "fa-solid fa-pause";
+                    showToast("تم ربط الشاشة بنجاح!");
+                } catch(err) {
+                    console.warn("Screen capture cancelled or failed:", err);
+                }
+            });
+
+            // Load Sample Demo Video Action
+            loadSampleBtn.addEventListener('click', () => {
+                const sampleUrl = "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4";
+                loadMainVideo(sampleUrl, "فيديو توضيحي");
+            });
+
+            function loadMainVideo(url, name) {
+                // Clear any active screen capture stream
+                if (mainVideo.srcObject) {
+                    const tracks = mainVideo.srcObject.getTracks();
+                    tracks.forEach(track => track.stop());
+                    mainVideo.srcObject = null;
+                }
+
+                mainVideo.src = url;
+                mainVideo.load();
+
+                const playPromise = mainVideo.play();
+                if (playPromise !== undefined) {
+                    playPromise.then(() => {
+                        noVideoPlaceholder.classList.add('hidden');
+                        playPauseIcon.className = "fa-solid fa-pause";
+                        showToast(`تم تحميل الفيديو: ${name}`);
+                    }).catch(err => {
+                        console.error("Autoplay/Load error:", err);
+                        // If autoplay is blocked by browser policy, show placeholder or allow manual play
+                        noVideoPlaceholder.classList.add('hidden');
+                        playPauseIcon.className = "fa-solid fa-play";
+                        showToast("تم تحميل الفيديو، اضغط زر التشغيل للبدء");
+                    });
+                }
+            }
+
+            // Playback Play / Pause
+            playPauseBtn.addEventListener('click', () => {
+                if (!mainVideo.src && !mainVideo.srcObject) return;
+
+                if (mainVideo.paused) {
+                    mainVideo.play();
+                    playPauseIcon.className = "fa-solid fa-pause";
+                } else {
+                    mainVideo.pause();
+                    playPauseIcon.className = "fa-solid fa-play";
+                }
+            });
+
+            // Rewind 5 Seconds
+            rewindBtn.addEventListener('click', () => {
+                if (mainVideo) {
+                    mainVideo.currentTime = Math.max(0, mainVideo.currentTime - 5);
+                }
+            });
+
+            // Update Time Indicators & Seek Bar
+            mainVideo.addEventListener('timeupdate', () => {
+                if (mainVideo.duration) {
+                    const progress = (mainVideo.currentTime / mainVideo.duration) * 100;
+                    seekBar.value = progress;
+                    currentTimeEl.innerText = formatTime(mainVideo.currentTime);
+                    durationTimeEl.innerText = formatTime(mainVideo.duration);
+                }
+            });
+
+            seekBar.addEventListener('input', () => {
+                if (mainVideo.duration) {
+                    mainVideo.currentTime = (seekBar.value / 100) * mainVideo.duration;
+                }
+            });
+
+            function formatTime(seconds) {
+                const m = Math.floor(seconds / 60);
+                const s = Math.floor(seconds % 60);
+                return `${m.toString().padStart(2, '0')}:${s.toString().padStart(2, '0')}`;
+            }
+
+            // Draggable Watermark Overlay Logic
+            let isDraggingWM = false;
+            let wmOffsetX = 0, wmOffsetY = 0;
+
+            watermarkPreview.addEventListener('mousedown', startDragWM);
+            watermarkPreview.addEventListener('touchstart', startDragWM, { passive: false });
+
+            function startDragWM(e) {
+                isDraggingWM = true;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const rect = watermarkPreview.getBoundingClientRect();
+                
+                wmOffsetX = clientX - rect.left;
+                wmOffsetY = clientY - rect.top;
+
+                document.addEventListener('mousemove', moveDragWM);
+                document.addEventListener('touchmove', moveDragWM, { passive: false });
+                document.addEventListener('mouseup', stopDragWM);
+                document.addEventListener('touchend', stopDragWM);
+            }
+
+            function moveDragWM(e) {
+                if (!isDraggingWM) return;
+                if (e.cancelable) e.preventDefault();
+
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const viewportRect = viewport.getBoundingClientRect();
+
+                let newLeft = clientX - viewportRect.left - wmOffsetX;
+                let newTop = clientY - viewportRect.top - wmOffsetY;
+
+                // Restrict inside viewport limits
+                newLeft = Math.max(8, Math.min(viewportRect.width - watermarkPreview.offsetWidth - 8, newLeft));
+                newTop = Math.max(8, Math.min(viewportRect.height - watermarkPreview.offsetHeight - 8, newTop));
+
+                watermarkPreview.style.left = `${newLeft}px`;
+                watermarkPreview.style.top = `${newTop}px`;
+            }
+
+            function stopDragWM() {
+                isDraggingWM = false;
+                document.removeEventListener('mousemove', moveDragWM);
+                document.removeEventListener('touchmove', moveDragWM);
+                document.removeEventListener('mouseup', stopDragWM);
+                document.removeEventListener('touchend', stopDragWM);
+            }
+
+            // Draggable Camera Overlay Logic
+            let isDraggingCam = false;
+            let camOffsetX = 0, camOffsetY = 0;
+
+            camOverlay.addEventListener('mousedown', startDragCam);
+            camOverlay.addEventListener('touchstart', startDragCam, { passive: false });
+
+            function startDragCam(e) {
+                if(isFullOverlayMode) return;
+                isDraggingCam = true;
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const rect = camOverlay.getBoundingClientRect();
+
+                camOffsetX = clientX - rect.left;
+                camOffsetY = clientY - rect.top;
+
+                document.addEventListener('mousemove', moveDragCam);
+                document.addEventListener('touchmove', moveDragCam, { passive: false });
+                document.addEventListener('mouseup', stopDragCam);
+                document.addEventListener('touchend', stopDragCam);
+            }
+
+            function moveDragCam(e) {
+                if (!isDraggingCam) return;
+                if (e.cancelable) e.preventDefault();
+
+                const clientX = e.touches ? e.touches[0].clientX : e.clientX;
+                const clientY = e.touches ? e.touches[0].clientY : e.clientY;
+                const viewportRect = viewport.getBoundingClientRect();
+
+                let newLeft = clientX - viewportRect.left - camOffsetX;
+                let newTop = clientY - viewportRect.top - camOffsetY;
+
+                newLeft = Math.max(4, Math.min(viewportRect.width - camOverlay.offsetWidth - 4, newLeft));
+                newTop = Math.max(4, Math.min(viewportRect.height - camOverlay.offsetHeight - 4, newTop));
+
+                camOverlay.style.left = `${newLeft}px`;
+                camOverlay.style.top = `${newTop}px`;
+                camOverlay.style.right = 'auto';
+            }
+
+            function stopDragCam() {
+                isDraggingCam = false;
+                document.removeEventListener('mousemove', moveDragCam);
+                document.removeEventListener('touchmove', moveDragCam);
+                document.removeEventListener('mouseup', stopDragCam);
+                document.removeEventListener('touchend', stopDragCam);
+            }
+
+            // Watermark Customization Listeners
+            watermarkToggle.addEventListener('change', () => {
+                if (watermarkToggle.checked) {
+                    watermarkPreview.classList.remove('hidden');
+                } else {
+                    watermarkPreview.classList.add('hidden');
+                }
+            });
+
+            watermarkTextInput.addEventListener('input', () => {
+                watermarkTextDisplay.innerText = watermarkTextInput.value || '@channel';
+            });
+
+            logoFileInput.addEventListener('change', (e) => {
+                const file = e.target.files[0];
+                if (file) {
+                    logoFileName.innerText = file.name;
+                    const reader = new FileReader();
+                    reader.onload = (event) => {
+                        logoImageObj = new Image();
+                        logoImageObj.src = event.target.result;
+                        wmLogoImgDisplay.src = event.target.result;
+                        wmLogoImgDisplay.classList.remove('hidden');
+                        removeLogoBtn.classList.remove('hidden');
+                    };
+                    reader.readAsDataURL(file);
+                }
+            });
+
+            removeLogoBtn.addEventListener('click', () => {
+                logoImageObj = null;
+                wmLogoImgDisplay.src = '';
+                wmLogoImgDisplay.classList.add('hidden');
+                removeLogoBtn.classList.add('hidden');
+                logoFileName.innerText = "اختيار صورة اللوجو (PNG شفاف)";
+                logoFileInput.value = '';
+            });
+
+            wmFontSelect.addEventListener('change', () => {
+                watermarkPreview.style.fontFamily = wmFontSelect.value;
+            });
+
+            wmTextColorPicker.addEventListener('input', () => {
+                watermarkPreview.style.color = wmTextColorPicker.value;
+                wmHexLabel.innerText = wmTextColorPicker.value.toUpperCase();
+            });
+
+            wmOpacitySlider.addEventListener('input', () => {
+                const val = wmOpacitySlider.value;
+                wmOpacityVal.innerText = `${val}%`;
+                watermarkPreview.style.opacity = val / 100;
+            });
+
+            wmSizeSlider.addEventListener('input', () => {
+                const val = wmSizeSlider.value;
+                wmSizeVal.innerText = `${val}px`;
+                watermarkPreview.style.fontSize = `${val}px`;
+            });
+
+            wmPosBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    wmPosBtns.forEach(b => {
+                        b.classList.remove('active', 'bg-purple-600/20', 'border-2', 'border-purple-500', 'text-purple-300');
+                        b.classList.add('bg-gray-950', 'border', 'border-gray-800', 'text-gray-400');
+                    });
+                    btn.classList.add('active', 'bg-purple-600/20', 'border-2', 'border-purple-500', 'text-purple-300');
+                    
+                    const pos = btn.dataset.pos;
+                    watermarkPreview.style.left = 'auto';
+                    watermarkPreview.style.right = 'auto';
+                    watermarkPreview.style.top = 'auto';
+                    watermarkPreview.style.bottom = 'auto';
+
+                    if (pos === 'top-left') {
+                        watermarkPreview.style.top = '16px';
+                        watermarkPreview.style.left = '16px';
+                    } else if (pos === 'top-right') {
+                        watermarkPreview.style.top = '16px';
+                        watermarkPreview.style.right = '16px';
+                    } else if (pos === 'bottom-left') {
+                        watermarkPreview.style.bottom = '16px';
+                        watermarkPreview.style.left = '16px';
+                    } else if (pos === 'bottom-right') {
+                        watermarkPreview.style.bottom = '16px';
+                        watermarkPreview.style.right = '16px';
+                    }
+                });
+            });
+
+            // Camera AI Background Removal Toggle
+            removeBgToggle.addEventListener('change', () => {
+                isRemoveBgEnabled = removeBgToggle.checked;
+            });
+
+            // View Mode Toggles (Floating vs Full Screen)
+            modeFloatingBtn.addEventListener('click', () => {
+                isFullOverlayMode = false;
+                modeFloatingBtn.className = "bg-purple-600/30 border-2 border-purple-500 text-purple-200 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+                modeFullOverlayBtn.className = "bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+                
+                camOverlay.className = "cam-preview-container absolute top-4 right-4 z-20 border-4 border-purple-500 shadow-2xl overflow-hidden rounded-full flex items-center justify-center bg-black/30 rgb-border";
+                camOverlay.style.width = "160px";
+                camOverlay.style.height = "160px";
+                camOverlay.style.left = "auto";
+                camOverlay.style.top = "16px";
+            });
+
+            modeFullOverlayBtn.addEventListener('click', () => {
+                isFullOverlayMode = true;
+                modeFullOverlayBtn.className = "bg-purple-600/30 border-2 border-purple-500 text-purple-200 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+                modeFloatingBtn.className = "bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+
+                camOverlay.className = "cam-preview-container absolute inset-0 z-20 overflow-hidden flex items-center justify-center bg-transparent pointer-events-none";
+                camOverlay.style.width = "100%";
+                camOverlay.style.height = "100%";
+                camOverlay.style.left = "0px";
+                camOverlay.style.top = "0px";
+            });
+
+            // Filters Selection Listener
+            filterBtns.forEach(btn => {
+                btn.addEventListener('click', () => {
+                    filterBtns.forEach(b => {
+                        b.classList.remove('active', 'bg-purple-600/20', 'border-2', 'border-purple-500', 'text-purple-300');
+                        b.classList.add('bg-gray-950', 'border', 'border-gray-800', 'text-gray-400');
+                    });
+                    btn.classList.add('active', 'bg-purple-600/20', 'border-2', 'border-purple-500', 'text-purple-300');
+                    activeFilter = btn.dataset.filter;
+                });
+            });
+
+            // Aspect Ratio Toggles
+            ratio169Btn.addEventListener('click', () => {
+                isAspectRatio169 = true;
+                viewport.className = "relative bg-black rounded-2xl overflow-hidden aspect-video border border-gray-800 shadow-2xl flex items-center justify-center select-none";
+                ratio169Btn.className = "bg-purple-600/20 border-2 border-purple-500 text-purple-300 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+                ratio916Btn.className = "bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+            });
+
+            ratio916Btn.addEventListener('click', () => {
+                isAspectRatio169 = false;
+                viewport.className = "relative bg-black rounded-2xl overflow-hidden aspect-[9/16] max-w-sm mx-auto border border-gray-800 shadow-2xl flex items-center justify-center select-none";
+                ratio916Btn.className = "bg-purple-600/20 border-2 border-purple-500 text-purple-300 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+                ratio169Btn.className = "bg-gray-950 border border-gray-800 hover:border-gray-700 text-gray-400 py-2 rounded-xl text-xs font-semibold flex items-center justify-center gap-2 transition";
+            });
+
+            // Audio Volume Sliders
+            micVolSlider.addEventListener('input', () => {
+                micVolVal.innerText = `${micVolSlider.value}%`;
+                if (micGainNode) {
+                    micGainNode.gain.value = micVolSlider.value / 100;
+                }
+            });
+
+            videoVolSlider.addEventListener('input', () => {
+                videoVolVal.innerText = `${videoVolSlider.value}%`;
+                mainVideo.volume = videoVolSlider.value / 100;
+                if (videoGainNode) {
+                    videoGainNode.gain.value = videoVolSlider.value / 100;
+                }
+            });
+
+            // Help Modal Controls
+            toggleHelpBtn.addEventListener('click', () => helpModal.classList.remove('hidden'));
+            closeHelpBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+            gotItHelpBtn.addEventListener('click', () => helpModal.classList.add('hidden'));
+
+            // Recording Engine Core (Export Canvas & Audio Mix)
+            function prepareAudioAndCanvasStream() {
+                if (!audioCtx) {
+                    audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (audioCtx.state === 'suspended') {
+                    audioCtx.resume();
+                }
+
+                audioDestination = audioCtx.createMediaStreamDestination();
+
+                // Mic Sound Integration
+                if (micStream) {
+                    const micSource = audioCtx.createMediaStreamSource(micStream);
+                    micGainNode = audioCtx.createGain();
+                    micGainNode.gain.value = micVolSlider.value / 100;
+                    micSource.connect(micGainNode);
+                    micGainNode.connect(audioDestination);
+                }
+
+                // Main Video Sound Integration
+                if (mainVideo.srcObject || mainVideo.src) {
+                    try {
+                        const videoSource = audioCtx.createMediaElementSource(mainVideo);
+                        videoGainNode = audioCtx.createGain();
+                        videoGainNode.gain.value = videoVolSlider.value / 100;
+                        videoSource.connect(videoGainNode);
+                        videoSource.connect(audioDestination);
+                        videoSource.connect(audioCtx.destination);
+                    } catch(e) {
+                        console.warn("Video audio source already created or restricted:", e);
+                    }
+                }
+
+                // Set Export Canvas Dimensions based on Aspect Ratio
+                if (isAspectRatio169) {
+                    exportCanvas.width = 1280;
+                    exportCanvas.height = 720;
+                } else {
+                    exportCanvas.width = 720;
+                    exportCanvas.height = 1280;
+                }
+
+                const canvasStream = exportCanvas.captureStream(30);
+                
+                // Combine Canvas Video Tracks with Mixed Audio Destination Tracks
+                const combinedTracks = [
+                    ...canvasStream.getVideoTracks(),
+                    ...audioDestination.stream.getAudioTracks()
+                ];
+
+                return new MediaStream(combinedTracks);
+            }
+
+            // Continuous Render Loop for Final Export Canvas
+            function renderExportFrame() {
+                if (!isRecording) return;
+
+                exportCtx.clearRect(0, 0, exportCanvas.width, exportCanvas.height);
+
+                // Draw Main Background Video Frame
+                if (mainVideo.readyState >= 2) {
+                    exportCtx.drawImage(mainVideo, 0, 0, exportCanvas.width, exportCanvas.height);
+                } else {
+                    exportCtx.fillStyle = '#111827';
+                    exportCtx.fillRect(0, 0, exportCanvas.width, exportCanvas.height);
+                }
+
+                // Draw Front Camera Overlay Frame
+                const viewportRect = viewport.getBoundingClientRect();
+                const camRect = camOverlay.getBoundingClientRect();
+
+                const scaleX = exportCanvas.width / viewportRect.width;
+                const scaleY = exportCanvas.height / viewportRect.height;
+
+                const camExportX = (camRect.left - viewportRect.left) * scaleX;
+                const camExportY = (camRect.top - viewportRect.top) * scaleY;
+                const camExportW = camRect.width * scaleX;
+                const camExportH = camRect.height * scaleY;
+
+                exportCtx.save();
+                if (!isFullOverlayMode) {
+                    // Circular Clip for Floating Mode
+                    exportCtx.beginPath();
+                    exportCtx.arc(camExportX + camExportW / 2, camExportY + camExportH / 2, camExportW / 2, 0, Math.PI * 2);
+                    exportCtx.clip();
+                }
+
+                exportCtx.drawImage(camCanvas, camExportX, camExportY, camExportW, camExportH);
+                exportCtx.restore();
+
+                // Draw Watermark & Logo Overlay
+                if (watermarkToggle.checked) {
+                    const wmRect = watermarkPreview.getBoundingClientRect();
+                    const wmExportX = (wmRect.left - viewportRect.left) * scaleX;
+                    const wmExportY = (wmRect.top - viewportRect.top) * scaleY;
+
+                    exportCtx.save();
+                    exportCtx.globalAlpha = wmOpacitySlider.value / 100;
+                    exportCtx.fillStyle = wmTextColorPicker.value;
+                    exportCtx.font = `bold ${parseInt(wmSizeSlider.value) * scaleX}px ${wmFontSelect.value}`;
+
+                    let drawOffsetX = wmExportX + (10 * scaleX);
+                    if (logoImageObj) {
+                        const logoSize = 24 * scaleX;
+                        exportCtx.drawImage(logoImageObj, drawOffsetX, wmExportY + (6 * scaleY), logoSize, logoSize);
+                        drawOffsetX += logoSize + (8 * scaleX);
+                    }
+
+                    exportCtx.fillText(watermarkTextInput.value || '@channel', drawOffsetX, wmExportY + (24 * scaleY));
+                    exportCtx.restore();
+                }
+
+                requestAnimationFrame(renderExportFrame);
+            }
+
+            // Start Reaction Recording Event
+            startRecordBtn.addEventListener('click', () => {
+                try {
+                    const combinedStream = prepareAudioAndCanvasStream();
+
+                    let options = { mimeType: 'video/webm;codecs=vp9,opus' };
+                    if (!MediaRecorder.isTypeSupported(options.mimeType)) {
+                        options = { mimeType: 'video/webm' };
+                    }
+
+                    mediaRecorder = new MediaRecorder(combinedStream, options);
+                    recordedChunks = [];
+
+                    mediaRecorder.ondataavailable = (e) => {
+                        if (e.data.size > 0) {
+                            recordedChunks.push(e.data);
+                        }
+                    };
+
+                    mediaRecorder.onstop = () => {
+                        const blob = new Blob(recordedChunks, { type: 'video/webm' });
+                        const url = URL.createObjectURL(blob);
+                        
+                        // Auto Trigger Download
+                        const a = document.createElement('a');
+                        a.style.display = 'none';
+                        a.href = url;
+                        a.download = `Reaction_Studio_${Date.now()}.webm`;
+                        document.body.appendChild(a);
+                        a.click();
+                        setTimeout(() => {
+                            document.body.removeChild(a);
+                            window.URL.revokeObjectURL(url);
+                        }, 100);
+
+                        showToast("تم تحضير المقطع وحفظه بنجاح!");
+                    };
+
+                    mediaRecorder.start();
+                    isRecording = true;
+
+                    // Play Video if paused
+                    if (mainVideo.paused && (mainVideo.src || mainVideo.srcObject)) {
+                        mainVideo.play();
+                        playPauseIcon.className = "fa-solid fa-pause";
+                    }
+
+                    // UI Status Updates
+                    startRecordBtn.disabled = true;
+                    startRecordBtn.classList.add('opacity-50', 'cursor-not-allowed');
+                    stopRecordBtn.disabled = false;
+                    stopRecordBtn.classList.remove('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+                    stopRecordBtn.classList.add('bg-purple-600', 'hover:bg-purple-500', 'text-white');
+
+                    recStatusDot.style.opacity = '1';
+                    recStatusText.innerText = "جاري التسجيل الحيي...";
+                    recStatusText.classList.add('text-red-400', 'font-bold');
+
+                    renderExportFrame();
+                    showToast("بدء تسجل رد الفعل الآن!");
+
+                } catch(err) {
+                    console.error("Recording error:", err);
+                    showToast("فشل بدء التسجيل، تأكد من دعم المتصفح", true);
+                }
+            });
+
+            // Stop Reaction Recording Event
+            stopRecordBtn.addEventListener('click', () => {
+                if (mediaRecorder && isRecording) {
+                    mediaRecorder.stop();
+                    isRecording = false;
+
+                    startRecordBtn.disabled = false;
+                    startRecordBtn.classList.remove('opacity-50', 'cursor-not-allowed');
+                    stopRecordBtn.disabled = true;
+                    stopRecordBtn.classList.add('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+                    stopRecordBtn.classList.remove('bg-purple-600', 'hover:bg-purple-500', 'text-white');
+
+                    recStatusDot.style.opacity = '0.3';
+                    recStatusText.innerText = "جاهز للتسجيل";
+                    recStatusText.classList.remove('text-red-400', 'font-bold');
+                }
+            });
+
+        });
+    </script>
+</body>
